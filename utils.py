@@ -43,7 +43,7 @@ class Activation(Layer):
 class Sigmoid(Activation):
 
 	def __init__(self):
-		super().__init__(sigmoid, sigmoid_prime)
+		super().__init__(self.sigmoid, self.sigmoid_prime)
 
 	@staticmethod
 	def sigmoid(x):
@@ -58,7 +58,7 @@ class Sigmoid(Activation):
 class ReLU(Activation):
 
 	def __init__(self):
-		super().__init__(relu, relu_prime)
+		super().__init__(self.relu, self.relu_prime)
 
 	@staticmethod
 	def relu(x):
@@ -133,7 +133,7 @@ class GIN(Layer):
 
 		H_out = np.dot(np.dot(self.A, self.H).T, self.W)
 
-		return H_out.T
+		return H_out.T, A
 
 	def backward(self, Δ_out, α):
 
@@ -157,7 +157,7 @@ class Resize(Layer):
 		self.λ = λ
 
 	
-	def forward(self, H, A)
+	def forward(self, H, A):
 
 		N = H.shape[0]
 		
@@ -199,7 +199,7 @@ class Resize(Layer):
 			# Padding with 0s
 			pad_size = self.λ - N
 
-			H_pad = np.pad(H, , ((0, pad_size), (0,0)), \
+			H_pad = np.pad(H, ((0, pad_size), (0,0)), \
 				mode = "constant", constant_values = 0)
 			
 			A_pad = np.pad(A, ((0, pad_size), (0, pad_size)), \
