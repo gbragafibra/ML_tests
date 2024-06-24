@@ -13,7 +13,13 @@ def predict(Net, input):
 	"""
 	output = input
 	for layer in Net:
+		"""
+		if isinstance(layer, Resize):
+			output = layer.forward(*output)
+		else:
+		"""
 		output = layer.forward(output)
+
 
 	return output
 
@@ -25,11 +31,17 @@ def MBGD(Net, dataset, task, loss, loss_prime,
 
 	mols = preprocess(dataset, task)
 
-	y = mols["Labels"]
+	y = np.array(mols["Labels"])
+
+
+	"""
+	Can't make these np.arrays as
+	they have arrays with inhomogeneous
+	shapes.
+	"""
 	A_ = mols["Adjacency Matrices"]
 	H_ = mols["Node Features"]
 
-	feat = [H_, A_]
 
 	train_size = int(train_ω * len(H_))
 
@@ -37,17 +49,17 @@ def MBGD(Net, dataset, task, loss, loss_prime,
 	train_idx = idx[:train_size]
 	test_idx = idx[train_size:]
 
-	train_feat = feat[train_idx]
+	train_feat = [(H_[i], A_[i]) for i in train_idx]
 	train_y = y[train_idx]
-	test_feat = feat[test_idx]
+	test_feat = [(H_[i], A_[i]) for i in test_idx]
 	test_y = y[test_idx]
-
 	train_losses = []
 	test_losses = []
 
 	for _ in range(epochs):
 		train_loss = 0
 		train_correct = 0
+
 		for i in range(len(train_feat), batch_size):
 			x_batch = train_feat[i : i + batch_size]
 			y_batch = train_y[i : i + batch_size]
