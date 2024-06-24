@@ -47,12 +47,38 @@ def preprocess(data, task):
 	return mol_set
 
 
+def count_atoms(smi):
+	"""
+	If we don't want to
+	use mols with less than
+	λ atoms.
+	This might be needed
+	depending on the type of
+	pooling operation used
+	initially.
+	Might also want to use padding
+	with aggregation operations,
+	instead of relying on a single
+	of these.
+	Takes smiles (smi) of the mol.
+	"""
+	mol = Chem.MolFromSmiles(smi)
+	n_atoms = mol.GetNumAtoms()
+
+	return n_atoms
+
+
 #Testing if it works
 if __name__ == "__main__":
 	dataset = pd.read_csv("data/sider.csv")
 	t = "Investigations"
 
-	mol_set = preprocess(dataset, t)
+	λ = 8 #8 atoms
+
+	sider_filtered = dataset[dataset["smiles"].apply(count_atoms)\
+	>= λ]
+
+	mol_set = preprocess(sider_filtered, t)
 
 	A = mol_set["Adjacency Matrices"]
 	H = mol_set["Node Features"]
