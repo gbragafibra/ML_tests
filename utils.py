@@ -37,7 +37,7 @@ class Activation(Layer):
 		return self.act(self.input)
 
 	def backward(self, Δ_out, α):
-		return Δ_out * self.act_prime(self.input)
+		return Δ_out * self.act_prime(self.input)[0]
 
 
 class Sigmoid(Activation):
@@ -47,13 +47,19 @@ class Sigmoid(Activation):
 
 	@staticmethod
 	def sigmoid(x):
-		return 1/(1 + np.exp(-x))
+		if isinstance(x, tuple):
+			return tuple(1/(1 + np.exp(-k)) for k in x)
+		else:
+			return 1/(1 + np.exp(-x))
 
 	@staticmethod
 	def sigmoid_prime(x):
 		σ = Sigmoid.sigmoid(x)
-
-		return σ * (1 - σ)
+		if isinstance(x, tuple):
+			return tuple(Sigmoid.sigmoid(k) * (1 - Sigmoid.sigmoid(k))\
+				for k in x)
+		else:
+			return σ * (1 - σ)
 
 class ReLU(Activation):
 
@@ -62,11 +68,17 @@ class ReLU(Activation):
 
 	@staticmethod
 	def relu(x):
-		return np.maximum(0, x)
+		if isinstance(x, tuple):
+			return tuple(np.maximum(0, k) for k in x)
+		else:
+			return np.maximum(0, x)
 
 	@staticmethod
 	def relu_prime(x):
-		return np.where(x > 0, 1, 0)
+		if isinstance(x, tuple):
+			return tuple(np.where(k > 0, 1, 0) for k in x)
+		else:
+			return np.where(x > 0, 1, 0)
 
 
 
@@ -95,10 +107,10 @@ class GIN(Layer):
 		"""
 		self.renorma = renorma
 
-	def forward(self, H, A):
+	def forward(self, H_A):
 		"""
-		H is node embedding vectors
-		for all of the graph.
+		H_A contains H and A.
+		H is the node embedding vector.
 		A is the self-connected adjacency
 		matrix (Ã = A + I)
 		"""
@@ -111,6 +123,7 @@ class GIN(Layer):
 		impossible to do in a vectorized
 		manner.
 		"""
+		H, A = H_A
 		self.H = H #dims: n_atoms x 1
 		
 		if self.renorma:
@@ -119,7 +132,12 @@ class GIN(Layer):
 			# https://en.wikipedia.org/wiki/Degree_matrix
 			D = np.zeros(self.A.shape, dtype = int)
 			np.fill_diagonal(D, np.sum(self.A, axis = 0))
-			D_tilda = np.linalg.inv(sqrtm(D))
+			
+			try:
+				D_tilda = np.linalg.inv(sqrtm(D))
+			except np.linalg.LinAlgError:
+				D_tilda = np.linalg.pinv(sqrtm(D))
+
 
 			self.A = np.dot(np.dot(D_tilda, self.A), D_tilda)
 		else:
@@ -133,7 +151,7 @@ class GIN(Layer):
 
 		H_out = np.dot(np.dot(self.A, self.H).T, self.W)
 
-		return H_out.T, A
+		return H_out.T, self.A
 
 	def backward(self, Δ_out, α):
 
@@ -157,7 +175,8 @@ class Resize(Layer):
 		self.λ = λ
 
 	
-	def forward(self, H, A):
+	def forward(self, H_A):
+		H, A = H_A
 
 		N = H.shape[0]
 		
