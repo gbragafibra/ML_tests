@@ -37,6 +37,7 @@ class Activation(Layer):
 		return self.act(self.input)
 
 	def backward(self, Δ_out, α):
+		#print("act",Δ_out.shape)
 		return Δ_out * self.act_prime(self.input)[0]
 
 
@@ -124,7 +125,7 @@ class GIN(Layer):
 		manner.
 		"""
 		H, A = H_A
-		self.H = H #dims: n_atoms x 1
+		self.H = H.reshape(-1,1) #dims: n_atoms x 1
 		
 		if self.renorma:
 			self.A = A
@@ -154,12 +155,12 @@ class GIN(Layer):
 		return H_out.T, self.A
 
 	def backward(self, Δ_out, α):
+		#print("gin",Δ_out.shape)
 
-		Δ_H = np.dot(Δ_out, np.dot(self.A, self.W))
-
-		self.W -= α * np.dot(Δ_out, np.dot(self.H, self.A.T))
-
-		return Δ_H
+		Δ_H = np.dot(Δ_out.T, np.dot(self.A, self.W))
+		self.W -= α * np.dot(Δ_out, np.dot(self.H.T, self.A.T))
+		
+		return Δ_H.T
 
 
 ### Graph padding/trimming initial layer
@@ -226,7 +227,7 @@ class Resize(Layer):
 
 			return H_pad, A_pad
 
-	def backward(self):
+	def backward(self, Δ_out, α):
 		"""
 		Initial layer without learnable params.
 		Can have null backward pass
@@ -234,8 +235,33 @@ class Resize(Layer):
 		pass
 
 
+### Dense Layer (Fully Connected)
+
+class Dense(Layer):
+
+	def __init__(self, output_size):
+		self.output_size = output_size
+		self.b = np.random.randn(self.output_size, 1)
 
 
+	def forward(self, H_A):
+		H, A = H_A
+		self.H = H.reshape(-1, 1)
+		self.A = A 
+		self.W = np.random.randn(self.output_size, self.H.shape[0]) / np.sqrt(self.H.shape[0])
+
+		return np.dot(self.W, self.H) + self.b
+
+	def backward(self, Δ_out, α):
+		#print("dense",Δ_out.shape)
+		W_Δ = np.dot(Δ_out, self.H.T)
+		H_Δ = np.dot(self.W.T, Δ_out)
+
+		self.W -= α * W_Δ
+		self.b -= α * Δ_out
+
+
+		return H_Δ
 
 
 # Mean-squared error loss func

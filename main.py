@@ -56,11 +56,11 @@ def MBGD(Net, dataset, task, loss, loss_prime,
 	train_losses = []
 	test_losses = []
 
-	for _ in range(epochs):
+	for e in range(epochs):
 		train_loss = 0
 		train_correct = 0
 
-		for i in range(len(train_feat), batch_size):
+		for i in range(0, len(train_feat), batch_size):
 			x_batch = train_feat[i : i + batch_size]
 			y_batch = train_y[i : i + batch_size]
 
@@ -87,7 +87,6 @@ def MBGD(Net, dataset, task, loss, loss_prime,
 
 		test_loss = 0
 		test_correct = 0
-
 		for x, y in zip(test_feat, test_y):
 			output = predict(Net, x)
 			test_loss += loss(y, output)
@@ -111,11 +110,11 @@ def MBGD(Net, dataset, task, loss, loss_prime,
 
 	if plot:
 		plt.plot(np.arange(1,epochs + 1,1), train_losses, "k", label = "Training Loss")
-		plt.plot(np.arange(1,epochs + 1,1), eval_losses, "r", label = "Evaluation Loss")
+		plt.plot(np.arange(1,epochs + 1,1), test_losses, "r", label = "Testing Loss")
 		plt.xlabel("Epoch")
 		plt.ylabel("Loss")
 		plt.legend()
-
+		plt.show()
 	pass
 
 
@@ -130,10 +129,12 @@ if __name__ == "__main__":
 	GIN(norma = True, renorma = True),
 	ReLU(),
 	GIN(norma = True, renorma = True),
+	ReLU(),
+	Dense(1),
 	Sigmoid()
 	]
 
 
 	MBGD(Net, data, t, mse, mse_prime,
-	20, 0.05, 10, 0.7, verbose = True,
+	20, 0.01, 30, 0.7, verbose = True,
 	plot = True)
