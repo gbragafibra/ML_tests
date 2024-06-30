@@ -1,6 +1,6 @@
 from rdkit import Chem
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 import pandas as pd
 from torch_geometric.data import Data
 
@@ -58,8 +58,25 @@ class GetData(Dataset):
 	def __len__(self):
 		return len(self.X)
 
+
+def split_sets(dataset, train_size, val_size,
+	test_size, batch_size):
+	"""
+	Takes correspondent dataset and splits
+	into train, val, and test sets, with
+	train, val and test sizes (∈ [0, 1]).
+	Also takes batch_size (∈ N).
+	"""
+	N = len(dataset)
+	train_loader = DataLoader(dataset[:int(N * train_size)], batch_size=batch_size, shuffle=True)
+	val_loader = DataLoader(dataset[int(N * train_size):int(N * (train_size + val_size))], batch_size=batch_size, shuffle=True)
+	test_loader = DataLoader(dataset[int(N * (train_size + val_size)):], batch_size=batch_size, shuffle=True)
+
+	return train_loader, val_loader, test_loader
+
 if __name__ == "__main__":
 	sider = pd.read_csv("../data/sider.csv")
 	sider_PyG = GetData(sider["smiles"], \
 		sider["Hepatobiliary disorders"])
-	print(sider_PyG[1000])
+	tr_ld, val_ld, ts_ld = split_sets(sider_PyG, 0.7, 0.15, 0.15, 16)
+	print(len(tr_ld))#num batches in tr_ld
