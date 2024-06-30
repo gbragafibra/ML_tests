@@ -30,3 +30,26 @@ class GCN(nn.Module):
 		x = F.sigmoid(x)
 
 		return x
+
+class GIN(nn.Module):
+	def __init__(self, h_dim):
+		super().__init__()
+		self.conv1 = GINConv(nn.Sequential(nn.Linear(4, h_dim),
+			nn.BatchNorm1d(h_dim), nn.ReLU()))
+		self.conv2 = GINConv(nn.Sequential(nn.Linear(h_dim, h_dim),
+			nn.BatchNorm1d(h_dim), nn.ReLU()))
+		self.conv3 = GINConv(nn.Sequential(nn.Linear(h_dim, h_dim),
+			nn.BatchNorm1d(h_dim), nn.ReLU()))
+		self.fc = nn.Linear(h_dim, 1)
+
+	def forward(self, input_):
+		x, e = input_.x, input_.edge_index
+
+		h = self.conv1(x, e)
+		h = self.conv2(h, e)
+		h = self.conv3(h, e)
+		h = global_mean_pool(h, input_.batch)
+		h = self.fc(h)
+		h = F.sigmoid(h)
+
+		return h
