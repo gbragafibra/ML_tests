@@ -1,8 +1,8 @@
 from rdkit import Chem
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 import pandas as pd
-from torch_geometric.data import Data
+from torch_geometric.data import Data, DataLoader
 
 
 def atom_feats(atom): # node(atom)features
