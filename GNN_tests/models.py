@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 from torch_geometric.nn import GCNConv, GINConv, global_mean_pool, GATConv, TransformerConv
 from torch.nn import functional as F
+from torch_geometric.nn import MessagePassing
+from torch_geometric.utils import add_self_loops
 
 
 class GCN(nn.Module):
@@ -41,7 +43,7 @@ class GIN(nn.Module):
 			nn.BatchNorm1d(h_dim), nn.ReLU()))
 		self.fc = nn.Linear(h_dim, 1, bias=False)
 
-		self._initialize_weights
+		self._initialize_weights()
 
 	def _initialize_weights():
 		def init_linear(self):
@@ -113,6 +115,63 @@ class GTR(nn.Module):
 		h = F.relu(h)
 		h = self.conv3(h, e)
 		h = F.relu(h)
+		h = F.dropout(h, p = 0.5, training = self.training)
+		h = global_mean_pool(h, input_.batch)
+		h = self.fc(h)
+		h = F.sigmoid(h)
+
+		return h
+
+
+class GINConv_(MessagePassing):
+	"""
+	Trying out building GINConv
+	"""
+	def __init__(self, in_, out_):
+		super().__init__(aggr = "add")#Add AGGREGATE op
+		self.MLP = nn.Sequential(
+			nn.Linear(in_, out_),
+			nn.ReLU(),
+			nn.Linear(out_, out_))
+		self.ε = nn.Parameter(torch.Tensor([0])) # can change
+
+	def forward(self, x, edge_index, edge_attr):
+		"""
+		Also using edge attributes
+		"""
+		# Making sure Ã = A + I
+		edge_index, _ = add_self_loops(edge_index, num_nodes = x.size(0))
+
+		m_ = self.propagate(edge_index, x=x, edge_attr=edge_attr)
+
+		#Propagate message
+		m = self.MLP((1 + self.ε) * x + m_)
+		return m 
+
+	def message(self, x_j):
+		return x_j
+
+	def update(self, aggr_out):
+		# With ReLU
+		return F.relu(aggr_out)
+
+
+
+class GIN_(nn.Module):
+	def __init__(self, h_dim):
+		super().__init__()
+		self.conv1 = GINConv_(4, h_dim)
+		self.conv2 = GINConv_(h_dim, h_dim)
+		self.conv3 = GINConv_(h_dim, h_dim)
+		self.fc = nn.Linear(h_dim, 1, bias=False)
+
+
+	def forward(self, input_):
+		x, e, e_attr = input_.x, input_.edge_index, input_.edge_attr
+
+		h = self.conv1(x, e, e_attr)
+		h = self.conv2(h, e, e_attr)
+		h = self.conv3(h, e, e_attr)
 		h = F.dropout(h, p = 0.5, training = self.training)
 		h = global_mean_pool(h, input_.batch)
 		h = self.fc(h)
