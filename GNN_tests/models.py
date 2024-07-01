@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from torch_geometric.nn import GCNConv, GINConv, global_mean_pool
+from torch_geometric.nn import GCNConv, GINConv, global_mean_pool, GATConv, TransformerConv
 from torch.nn import functional as F
 
 
@@ -58,6 +58,61 @@ class GIN(nn.Module):
 		h = self.conv1(x, e)
 		h = self.conv2(h, e)
 		h = self.conv3(h, e)
+		h = F.dropout(h, p = 0.5, training = self.training)
+		h = global_mean_pool(h, input_.batch)
+		h = self.fc(h)
+		h = F.sigmoid(h)
+
+		return h
+
+
+class GAT(nn.Module):
+	def __init__(self, h_dim):
+		super().__init__()
+		# 4 attention heads
+		# once a GATConv is applied the output
+		# is going to have num_heads * h_dim features' size
+		self.conv1 = GATConv(4, h_dim, heads = 4)
+		self.conv2 = GATConv(4 * h_dim, h_dim, heads = 4)
+		self.conv3 = GATConv(4 * h_dim, h_dim, heads = 4)
+		self.fc = nn.Linear(4 * h_dim, 1, bias=False)
+		nn.init.xavier_uniform_(self.fc.weight)
+	
+	def forward(self, input_):
+		x, e = input_.x, input_.edge_index
+		h = self.conv1(x, e)
+		h = F.relu(h)
+		h = self.conv2(h, e)
+		h = F.relu(h)
+		h = self.conv3(h, e)
+		h = F.relu(h)
+		h = F.dropout(h, p = 0.5, training = self.training)
+		h = global_mean_pool(h, input_.batch)
+		h = self.fc(h)
+		h = F.sigmoid(h)
+
+		return h
+
+class GTR(nn.Module):
+	"""
+	Using the graph transformer operator
+	"""
+	def __init__(self, h_dim):
+		super().__init__()
+		self.conv1 = TransformerConv(4, h_dim, heads = 4, beta = True)
+		self.conv2 = TransformerConv(4 * h_dim, h_dim, heads = 4, beta = True)
+		self.conv3 = TransformerConv(4 * h_dim, h_dim, heads = 4, beta = True)
+		self.fc = nn.Linear(4 * h_dim, 1, bias = False)
+		nn.init.xavier_uniform_(self.fc.weight)
+
+	def forward(self, input_):
+		x, e = input_.x, input_.edge_index
+		h = self.conv1(x, e)
+		h = F.relu(h)
+		h = self.conv2(h, e)
+		h = F.relu(h)
+		h = self.conv3(h, e)
+		h = F.relu(h)
 		h = F.dropout(h, p = 0.5, training = self.training)
 		h = global_mean_pool(h, input_.batch)
 		h = self.fc(h)
