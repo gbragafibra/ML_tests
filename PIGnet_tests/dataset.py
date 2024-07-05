@@ -6,19 +6,16 @@ from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds
 import numpy as np
 import torch
 import random
+from torch_geometric.loader import DataLoader
+from torch_geometric.data import Data, Batch
 from typing import List, Dict, Tuple, Any
 from rdkit.Chem.rdmolops import GetAdjacencyMatrix
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import Dataset
 random.seed(37)
 RDLogger.DisableLog("rdApp.*")
 
 INTERACTION_TYPES = [
-	"saltbridge",
 	"hbonds",
-	"pication",
-	"pistack",
-	"halogen",
-	"waterbridge",
 	"hydrophobic",
 	"metal_complexes",
 ]
@@ -53,25 +50,7 @@ HYBRIDIZATIONS = [
 FORMALCHARGES = [-2, -1, 0, 1, 2, 3, 4]
 METALS = ["Zn", "Mn", "Co", "Mg", "Ni", "Fe", "Ca", "Cu"]
 HYDROPHOBICS = ["F", "CL", "BR", "I"]
-VDWRADII = {
-	6: 1.90,
-	7: 1.8,
-	8: 1.7,
-	16: 2.0,
-	15: 2.1,
-	9: 1.5,
-	17: 1.8,
-	35: 2.0,
-	53: 2.2,
-	30: 1.2,
-	25: 1.2,
-	26: 1.2,
-	27: 1.2,
-	12: 1.2,
-	28: 1.2,
-	20: 1.2,
-	29: 1.2,
-}
+
 HBOND_DONOR_INDICES = ["[!#6;!H0]"]
 HBOND_ACCEPPTOR_SMARTS = [
 	"[$([!#6;+0]);!$([F,Cl,Br,I]);!$([o,s,nX3]);!$([Nv5,Pv5,Sv4,Sv6])]"
@@ -111,12 +90,6 @@ def get_atom_feature(mol: Mol) -> np.ndarray:
 		H.append(atom_feature(mol, idx))
 	H = np.array(H)
 	return H  
-
-def get_vdw_radius(atom: Atom) -> float:
-	atomic_num = atom.GetAtomicNum()
-	if VDWRADII.get(atomic_num):
-		return VDWRADII[atomic_num]
-	return Chem.GetPeriodicTable().GetRvdw(atomic_num)
 
 
 def get_hydrophobic_atom(mol: Mol) -> np.ndarray:
@@ -190,20 +163,18 @@ def get_A_metal_complexes(ligand_mol: Mol, target_mol: Mol) -> np.ndarray:
 			metal_indice[ligand_idx, target_idx] = 1
 	return metal_indice
 
-def mol_to_feature(ligand_mol: Mol, target_mol: Mol) -> Dict[str, Any]:
+def mol_to_feature(ligand_mol: Mol, target_mol: Mol) -> Data:
 	# Remove hydrogens
 	ligand_mol = Chem.RemoveHs(ligand_mol)
 	target_mol = Chem.RemoveHs(target_mol)
 
 	# prepare ligand
 	ligand_natoms = ligand_mol.GetNumAtoms()
-	ligand_pos = np.array(ligand_mol.GetConformers()[0].GetPositions())
 	ligand_adj = GetAdjacencyMatrix(ligand_mol) + np.eye(ligand_natoms)
 	ligand_h = get_atom_feature(ligand_mol)
 
 	# prepare protein
 	target_natoms = target_mol.GetNumAtoms()
-	target_pos = np.array(target_mol.GetConformers()[0].GetPositions())
 	target_adj = GetAdjacencyMatrix(target_mol) + np.eye(target_natoms)
 	target_h = get_atom_feature(target_mol)
 
@@ -214,44 +185,18 @@ def mol_to_feature(ligand_mol: Mol, target_mol: Mol) -> Dict[str, Any]:
 	interaction_indice[1] = get_A_metal_complexes(ligand_mol, target_mol)
 	interaction_indice[2] = get_A_hydrophobic(ligand_mol, target_mol)
 
-	# count rotatable bonds
-	rotor = CalcNumRotatableBonds(ligand_mol)
+	ligand_e_idx = torch.tensor(ligand_adj).nonzero(as_tuple=False).t().contiguous()
+	target_e_idx = torch.tensor(target_adj).nonzero(as_tuple=False).t().contiguous()
 
-	# valid
-	ligand_valid = np.ones((ligand_natoms,))
-	target_valid = np.ones((target_natoms,))
 
-	# no metal
-	ligand_non_metal = np.array(
-		[1 if atom.GetSymbol() not in METALS else 0 for atom in ligand_mol.GetAtoms()]
-	)
-	target_non_metal = np.array(
-		[1 if atom.GetSymbol() not in METALS else 0 for atom in target_mol.GetAtoms()]
-	)
-	# vdw radius
-	ligand_vdw_radii = np.array(
-		[get_vdw_radius(atom) for atom in ligand_mol.GetAtoms()]
-	)
-	target_vdw_radii = np.array(
-		[get_vdw_radius(atom) for atom in target_mol.GetAtoms()]
-	)
+	sample = Data(
+		x_lig = torch.tensor(ligand_h, dtype=torch.float),
+		x_tar = torch.tensor(target_h, dtype=torch.float),
+		lig_e_idx = ligand_e_idx,
+		tar_e_idx = target_e_idx,
+		A_inter = torch.tensor(interaction_indice, dtype=torch.float)
+		)
 
-	sample = {
-		"ligand_h": ligand_h,
-		"ligand_adj": ligand_adj,
-		"target_h": target_h,
-		"target_adj": target_adj,
-		"interaction_indice": interaction_indice,
-		"ligand_pos": ligand_pos,
-		"target_pos": target_pos,
-		"rotor": rotor,
-		"ligand_vdw_radii": ligand_vdw_radii,
-		"target_vdw_radii": target_vdw_radii,
-		"ligand_valid": ligand_valid,
-		"target_valid": target_valid,
-		"ligand_non_metal": ligand_non_metal,
-		"target_non_metal": target_non_metal,
-	}
 	return sample
 
 
@@ -267,7 +212,7 @@ def read_keys(path: str) -> List[str]:
 def parse_set(path: str) -> Dict[str, float]:
 	id_to_y = {}
 	with open(path, "r") as f:
-		next(f)
+		next(f) # skip the header
 		for line in f: 
 			parts = line.strip().split()
 			key = parts[0]
@@ -288,87 +233,37 @@ class ComplexDataset(Dataset):
 		self.keys = keys 
 		self.data_dir = data_dir
 		self.id_to_y = id_to_y
+		self.samples = []
+
+		for key in self.keys:
+			with open(os.path.join(self.data_dir + "/" + key + "_molecules.pkl"), "rb") as f:
+				m1, m2 = pickle.load(f)
+
+			sample = mol_to_feature(m1, m2)
+			sample.affinity = torch.tensor(self.id_to_y[key] * -1.36, dtype=torch.float)
+			self.samples.append(sample)
 
 	def __len__(self) -> int:
-		return len(self.keys)
+		return len(self.samples)
 
-	def __getitem__(self, idx: int) -> Dict[str, Any]:
-		key = self.keys[idx]
-		with open(os.path.join(self.data_dir + "/" + key + "_molecules.pkl"), "rb") as f:
-			m1, m2 = pickle.load(f)
+	def __getitem__(self, idx: int) -> Any:
+		return self.samples[idx]
 
-		sample = mol_to_feature(m1, m2)
-		sample["affinity"] = self.id_to_y[key] * -1.36
-		sample["key"] = key 
-		return sample
 
 def get_dataset_dataloader(keys: List[str],
 	data_dir: str,
 	id_to_y: Dict[str, float],
-	batch_size: int) -> Tuple[Dataset, DataLoader]:
+	batch_size: int):
 
 	dataset = ComplexDataset(keys, data_dir, id_to_y)
 	dataloader = DataLoader(dataset,
 		batch_size,
-		collate_fn=tensor_collate_fn,
 		shuffle = True)
-	return dataset, dataloader
+	return dataloader
 
-def check_dimension(tensors: List[Any]) -> Any:
-	size = []
-	for tensor in tensors:
-		if isinstance(tensor, np.ndarray):
-			size.append(tensor.shape)
-		else:
-			size.append(0)
-	size = np.asarray(size)
+def collate_func(batch):
+	return Batch.from_data_list(batch)
 
-	return np.max(size, 0)
-
-
-def collate_tensor(tensor: Any, max_tensor: Any, batch_idx: int) -> Any:
-	if isinstance(tensor, np.ndarray):
-		dims = tensor.shape
-		max_dims = max_tensor.shape
-		slice_list = tuple([slice(0, dim) for dim in dims])
-		slice_list = [slice(batch_idx, batch_idx + 1), *slice_list]
-		max_tensor[tuple(slice_list)] = tensor
-	elif isinstance(tensor, str):
-		max_tensor[batch_idx] = tensor
-	else:
-		max_tensor[batch_idx] = tensor
-
-	return max_tensor
-
-
-def tensor_collate_fn(batch: List[Any]) -> Dict[str, Any]:
-	batch_items = [it for e in batch for it in e.items()]
-	dim_dict = dict()
-	total_key, total_value = list(zip(*batch_items))
-	batch_size = len(batch)
-	n_element = int(len(batch_items) / batch_size)
-	total_key = total_key[0:n_element]
-	for i, k in enumerate(total_key):
-		value_list = [v for j, v in enumerate(total_value) if j % n_element == i]
-		if isinstance(value_list[0], np.ndarray):
-			dim_dict[k] = np.zeros(np.array([batch_size, *check_dimension(value_list)]))
-		elif isinstance(value_list[0], str):
-			dim_dict[k] = ["" for _ in range(batch_size)]
-		else:
-			dim_dict[k] = np.zeros((batch_size,))
-
-	ret_dict = {}
-	for j in range(batch_size):
-		if batch[j] == None:
-			continue
-		keys = []
-		for key, value in dim_dict.items():
-			value = collate_tensor(batch[j][key], value, j)
-			if not isinstance(value, list):
-				value = torch.from_numpy(value).float()
-			ret_dict[key] = value
-
-	return ret_dict
 
 if __name__ == "__main__":
 	key_file = "coreset_keys.txt"
@@ -382,6 +277,5 @@ if __name__ == "__main__":
 	id_to_y = create_key_to_y(key_file, set_file)
 	
 
-	dataset, dataloader = get_dataset_dataloader(
+	dataloader = get_dataset_dataloader(
 		keys, data_dir, id_to_y, 10)
-	print(len(dataset))
