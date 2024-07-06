@@ -70,8 +70,8 @@ if __name__ == "__main__":
 	dataset, dataloader = get_dataset_dataloader(
 		keys, data_dir, id_to_y, 5)
 
-	in_dim = 128
-	hid_dim = 64
+	in_dim = 54
+	hid_dim = 128
 	out_dim = 1
 
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
