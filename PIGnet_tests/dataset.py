@@ -6,8 +6,8 @@ from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds
 import numpy as np
 import torch
 import random
-from torch_geometric.loader import DataLoader
-from torch_geometric.data import Data, Batch
+#from torch_geometric.loader import DataLoader
+from torch_geometric.data import Data, Batch, DataLoader
 from typing import List, Dict, Tuple, Any
 from rdkit.Chem.rdmolops import GetAdjacencyMatrix
 from torch.utils.data import Dataset
@@ -188,11 +188,14 @@ def mol_to_feature(ligand_mol: Mol, target_mol: Mol) -> Data:
 	ligand_e_idx = torch.tensor(ligand_adj, dtype=torch.long).nonzero(as_tuple=False).t().contiguous()
 	target_e_idx = torch.tensor(target_adj, dtype=torch.long).nonzero(as_tuple=False).t().contiguous()
 
+	A_inter = []
+	for i in range(len(INTERACTION_TYPES)):
+	    A_inter.append(torch.tensor(interaction_indice[i], dtype=torch.long).nonzero(as_tuple=False).t().contiguous())
 
 	sample = Data(
 		x_lig = torch.tensor(ligand_h, dtype=torch.float),
 		x_tar = torch.tensor(target_h, dtype=torch.float),
-		A_inter = torch.tensor(interaction_indice, dtype=torch.long),
+		A_inter = A_inter,
 		lig_e_idx = ligand_e_idx,
 		tar_e_idx = target_e_idx,
 		)
@@ -240,7 +243,7 @@ class ComplexDataset(Dataset):
 				m1, m2 = pickle.load(f)
 
 			sample = mol_to_feature(m1, m2)
-			sample.y = torch.tensor(self.id_to_y[key] * -1.36, dtype=torch.float)
+			sample.y = torch.tensor([self.id_to_y[key] * -1.36], dtype=torch.float)
 			self.samples.append(sample)
 
 	def __len__(self) -> int:
@@ -256,13 +259,12 @@ def get_dataset_dataloader(keys: List[str],
 	batch_size: int):
 
 	dataset = ComplexDataset(keys, data_dir, id_to_y)
-	dataloader = DataLoader(dataset,
+	dataloader = loader(dataset,
 		batch_size,
 		shuffle = True)
 	return dataloader
 
-
-#Alternative loader -> bad!
+#Alternative loader ; without padding or trimming
 def loader(dataset, batch_size, shuffle = True):
 	dataset = list(dataset)
 	if shuffle:
@@ -276,44 +278,13 @@ def loader(dataset, batch_size, shuffle = True):
 		end_idx = min((i + 1) * batch_size, N)
 		batch_ = dataset[start_idx:end_idx]
 
-		x_lig_size = max(data.x_lig.size(0) for data in batch_)
-		x_tar_size = max(data.x_tar.size(0) for data in batch_)
-		lig_e_idx_size = max(data.lig_e_idx.size(0) for data in batch_)
-		tar_e_idx_size = max(data.tar_e_idx.size(0) for data in batch_)
-		A_inter_size = max(data.A_inter.size(0) for data in batch_)
 
-
-		padd_batch = []
-		for data in batch_:
-			pad_x_lig = torch.zeros(x_lig_size, *data.x_lig.shape[1:])
-			pad_x_tar = torch.zeros(x_tar_size, *data.x_tar.shape[1:])
-			pad_lig_e_idx = torch.zeros(lig_e_idx_size, *data.lig_e_idx.shape[1:])
-			pad_tar_e_idx = torch.zeros(tar_e_idx_size, *data.tar_e_idx.shape[1:]) 
-			pad_A_inter = torch.zeros(A_inter_size, *data.A_inter.shape[1:])
-			
-
-			if data.x_lig is not None:
-				pad_x_lig[:data.x_lig.size(0)] = data.x_lig
-			if data.x_tar is not None:
-				pad_x_tar[:data.x_tar.size(0)] = data.x_tar
-			if data.lig_e_idx is not None:
-				pad_lig_e_idx[:data.lig_e_idx.size(0)] = data.lig_e_idx
-			if data.tar_e_idx is not None:
-				pad_tar_e_idx[:data.tar_e_idx.size(0)] = data.tar_e_idx
-			if data.A_inter is not None:
-				pad_A_inter[:data.A_inter.size(0)] = data.A_inter
-
-			padded_data = Data(x_lig=pad_x_lig, x_tar=pad_x_tar,
-                               lig_e_idx=pad_lig_e_idx, tar_e_idx=pad_tar_e_idx,
-                               A_inter=pad_A_inter)
-			padd_batch.append(padded_data)
-
-		yield padd_batch
+		yield batch_
 
 
 if __name__ == "__main__":
 	key_file = "coreset_keys.txt"
-	keys_ = read_keys(key_file)[:10]
+	keys_ = read_keys(key_file)[:20]
 	#two proteins that are still NoneType
 	# even when using the PDB file
 	except_ = ["1gpk", "3kwa"]
@@ -327,3 +298,5 @@ if __name__ == "__main__":
 		keys, data_dir, id_to_y, 10)
 	for i, batch in enumerate(dataloader):
 		print(i, batch)
+		if i >= 1:
+			break
