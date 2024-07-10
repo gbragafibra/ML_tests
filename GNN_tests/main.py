@@ -85,4 +85,4 @@ if __name__ == "__main__":
 	sider = pd.read_csv("../data/sider.csv")
 	sider_PyG = GetData(sider["smiles"], \
 		sider["Eye disorders"])
-	train_val_test(sider_PyG, GCN, 100, 0.05, 16, plot = True)
+	train_val_test(sider_PyG, GIN_, 100, 0.05, 16, plot = True)
