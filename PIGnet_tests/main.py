@@ -4,10 +4,11 @@ from models	import *
 from torch.nn.parallel import DataParallel
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt 
-
+import numpy as np
+from scipy.stats import pearsonr
 
 def run(model, loader, opt, loss, device, num_epochs,
-	plot = False):
+	plot = False, compare = False):
 	
 	train_loader, test_loader = train_test_split(loader, test_size = 0.2, random_state = 37)
 
@@ -34,22 +35,38 @@ def run(model, loader, opt, loss, device, num_epochs,
 		
 		#testing
 		model.eval()
+		#Last epoch true and predicted affinities
+		true_ = []
+		pred_ = []
 		with torch.no_grad():
 			test_loss = 0
 			for i, batch in enumerate(test_loader):
 				batch = [sample.to(device) for sample in batch]
 				output = model(batch)
 				y_true = torch.cat([sample.y.unsqueeze(0) for sample in batch], dim=0).to(device)
+				true_.append(y_true.cpu().numpy())
+				pred_.append(output.cpu().numpy())
 				l = loss(output, y_true)
 				test_loss += l.item()
 			test_losses.append(test_loss/len(test_loader))
 			print(f"Epoch [{e+1}/{num_epochs}] Average Test Loss: {test_loss / len(test_loader):.4f}")
+		true_ = np.concatenate(true_)
+		pred_ = np.concatenate(pred_)
+
 
 	if plot:
 		plt.plot(range(num_epochs), train_losses, "ro-", label = "Train Loss")
 		plt.plot(range(num_epochs), test_losses, "bo-", label = "Testing Loss")
 		plt.xlabel("Epoch")
 		plt.ylabel("Loss")
+		plt.legend()
+		plt.show()
+
+	if compare:
+		R = pearsonr(true_.flatten(), pred_.flatten())[0]
+		plt.plot(true_, pred_, "ko", label = f"R = {R:.4f}")
+		plt.xlabel("True Affinity")
+		plt.ylabel("Predicted Affinity")
 		plt.legend()
 		plt.show()
 
@@ -68,19 +85,19 @@ if __name__ == "__main__":
 
 
 	dataloader = get_dataset_dataloader(
-		keys, data_dir, id_to_y, 12)
+		keys, data_dir, id_to_y, 5)
 
 	in_dim = 54
 	hid_dim = 200
 	out_dim = 1
 
-	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-	#device = torch.device("cpu")
-	model = GNN(in_dim, hid_dim, out_dim).to(device)
+	#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+	device = torch.device("cpu")
+	model = GIN(in_dim, hid_dim, out_dim).to(device)
 	if torch.cuda.device_count() > 1:
 		model = nn.DataParallel(model)
 	opt = torch.optim.Adam(model.parameters(), lr = 0.001)
 	loss = nn.MSELoss()
 
-	run(model, list(dataloader), opt, loss, device, 10,
-		plot = True)	
+	run(model, list(dataloader), opt, loss, device, 5,
+		plot = False, compare = True)	
