@@ -2,9 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F 
 from torch_geometric.nn import GCNConv, global_mean_pool
-from torch_geometric.loader import DataLoader
-from dataset import *
-from torch.nn.parallel import DataParallel
 
 
 class GNN(nn.Module):
@@ -57,50 +54,3 @@ class GNN(nn.Module):
 
 		return torch.cat(out_)
 
-def train(model, loader, opt, loss, device, num_epochs):
-	model.train()
-	for e in range(num_epochs):
-		e_loss = 0
-		for i, batch in enumerate(loader):
-			opt.zero_grad()
-			batch = [sample.to(device) for sample in batch]
-
-			output = model(batch)
-			y_true = torch.cat([sample.y.unsqueeze(0) for sample in batch], dim=0).to(device)
-			#y_true = y_true.view_as(output) #ensuring same dims
-			l = loss(output, y_true)
-			e_loss += l.item()
-			print(f"Epoch [{e+1}/{num_epochs}], Batch [{i+1}/{len(loader)}], Loss: {l.item():.4f}")
-			l.backward()
-			opt.step()
-		print(f"Epoch [{e+1}/{num_epochs}] Average Loss: {e_loss / len(loader):.4f}")
-	pass
-
-if __name__ == "__main__":
-	key_file = "coreset_keys.txt"
-	keys_ = read_keys(key_file)
-	#two proteins that are still NoneType
-	# even when using the PDB file
-	except_ = ["1gpk", "3kwa"]
-	keys = [key for key in keys_ if key not in except_]
-	set_file = "data/CASF-2016/power_docking/CoreSet.dat"
-	data_dir = "data/MOLS/"
-	id_to_y = create_key_to_y(key_file, set_file)
-
-
-	dataloader = get_dataset_dataloader(
-		keys, data_dir, id_to_y, 5)
-
-	in_dim = 54
-	hid_dim = 200
-	out_dim = 1
-
-	#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-	device = torch.device("cpu")
-	model = GNN(in_dim, hid_dim, out_dim).to(device)
-	if torch.cuda.device_count() > 1:
-		model = nn.DataParallel(model)
-	opt = torch.optim.Adam(model.parameters(), lr = 0.001)
-	loss = nn.MSELoss()
-
-	train(model, list(dataloader), opt, loss, device, 10)	
