@@ -190,7 +190,7 @@ def mol_to_feature(ligand_mol: Mol, target_mol: Mol) -> Data:
 
 	A_inter = []
 	for i in range(len(INTERACTION_TYPES)):
-	    A_inter.append(torch.tensor(interaction_indice[i], dtype=torch.long).nonzero(as_tuple=False).t().contiguous())
+		A_inter.append(torch.tensor(interaction_indice[i], dtype=torch.long).nonzero(as_tuple=False).t().contiguous())
 
 	sample = Data(
 		x_lig = torch.tensor(ligand_h, dtype=torch.float),
@@ -280,6 +280,54 @@ def loader(dataset, batch_size, shuffle = True):
 
 
 		yield batch_
+
+
+# Alternative function to standard collate_fn
+# in DataLoader (Not working properly)
+def collate(batch):
+
+	#Get max lenghts for all attributes in Data Object
+	x_lig_len = max(item.x_lig.shape[0] for item in batch)
+	x_tar_len = max(item.x_tar.shape[0] for item in batch)
+	lig_e_idx_len = max(item.lig_e_idx.shape[1] for item in batch)
+	tar_e_idx_len = max(item.tar_e_idx.shape[1] for item in batch)
+
+	batch_x_lig = []
+	batch_x_tar = []
+	batch_lig_e_idx = []
+	batch_tar_e_idx = []
+	batch_A_inter = [[] for _ in range(3)] # 3 is len(INTERACTION_TYPES)
+	batch_y = []
+
+	for item in batch:
+		batch_y.append(item.y)
+
+		x_lig_pad_len = x_lig_len - item.x_lig.shape[0]
+		batch_x_lig.append(torch.cat([item.x_lig, torch.zeros((x_lig_pad_len, item.x_lig.shape[1]))], dim=0))
+
+		x_tar_pad_len = x_tar_len - item.x_tar.shape[0]
+		batch_x_tar.append(torch.cat([item.x_tar, torch.zeros((x_tar_pad_len, item.x_tar.shape[1]))], dim=0))
+
+		lig_e_idx_pad_len = lig_e_idx_len - item.lig_e_idx.shape[1]
+		batch_lig_e_idx.append(torch.cat([item.lig_e_idx, torch.zeros((2, lig_e_idx_pad_len), dtype=torch.long)], dim=1))
+
+		tar_e_idx_pad_len = tar_e_idx_len - item.tar_e_idx.shape[1]
+		batch_tar_e_idx.append(torch.cat([item.tar_e_idx, torch.zeros((2, tar_e_idx_pad_len), dtype=torch.long)], dim=1))
+		
+		for i in range(3):  # 3 is len(INTERACTION_TYPES)
+			A_inter_i = item.A_inter[i]
+			A_inter_pad = torch.cat([
+				torch.cat([A_inter_i, torch.zeros((A_inter_i.shape[0], x_tar_pad_len), dtype=A_inter_i.dtype)], dim=1),
+				torch.zeros((x_lig_pad_len, A_inter_i.shape[1] + x_tar_pad_len), dtype=A_inter_i.dtype)
+			], dim=0)
+			batch_A_inter[i].append(A_inter_pad)
+
+	return Data(x_lig = torch.stack(batch_x_lig),
+		x_tar = torch.stack(batch_x_tar),
+		A_inter = [torch.stack(a_inter) for a_inter in batch_A_inter],
+		lig_e_idx = torch.stack(batch_lig_e_idx),
+		tar_e_idx = torch.stack(batch_tar_e_idx),
+		y = torch.tensor(batch_y))
 
 
 if __name__ == "__main__":
